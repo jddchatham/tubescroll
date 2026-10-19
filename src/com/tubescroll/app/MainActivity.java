@@ -467,9 +467,10 @@ public class MainActivity extends Activity {
     /** MP4 or MP3 -> Termux yt-dlp; clipboard fallback if Termux unreachable. */
     private void askDownload(final String url, final String label) {
         String name = label == null ? url : (label.length() > 42 ? label.substring(0, 42) + "\u2026" : label);
+        // NOTE: setMessage + setItems fight on Material themes (message wins,
+        // list disappears) — put the label in the title instead.
         new AlertDialog.Builder(this)
-                .setTitle("Download")
-                .setMessage(name)
+                .setTitle("Download \u2014 " + name)
                 .setItems(new String[]{"Video (MP4, up to 1080p)", "Audio only (MP3)"},
                         new android.content.DialogInterface.OnClickListener() {
                             @Override
