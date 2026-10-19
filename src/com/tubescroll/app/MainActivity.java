@@ -482,6 +482,12 @@ public class MainActivity extends Activity {
     }
 
     private void runDownload(String url, String kind) {
+        // Always stage the command on the clipboard as the guaranteed path.
+        String cmd = "tube-dl \"" + url + "\" " + kind;
+        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("cmd", cmd));
+        // Preferred path: hand straight to Termux (works once Termux has reloaded
+        // its config after an app restart; silently ignored otherwise).
         try {
             Intent i = new Intent();
             i.setClassName("com.termux", "com.termux.app.TermuxService");
@@ -494,12 +500,11 @@ public class MainActivity extends Activity {
                     "Download started \u2014 watch Termux, file lands in Download/",
                     Toast.LENGTH_LONG).show();
         } catch (Exception e) {
-            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-            if (cm != null) {
-                cm.setPrimaryClip(ClipData.newPlainText("url", url));
-            }
+            try {
+                startActivity(getPackageManager().getLaunchIntentForPackage("com.termux"));
+            } catch (Exception ignored) { }
             Toast.makeText(this,
-                    "Termux hand-off failed \u2014 URL copied. In Termux run: tube-dl \"" + url + "\" " + kind,
+                    "Command copied \u2014 open Termux, long-press \u2192 Paste \u2192 Enter",
                     Toast.LENGTH_LONG).show();
         }
     }
