@@ -280,8 +280,13 @@ public class Tube {
         lastError = "";
         try {
             String enc = java.net.URLEncoder.encode(query, "UTF-8");
-            String html = Fetch.getDesktop(
-                    "https://www.youtube.com/results?search_query=" + enc + "&sp=EgIQAg%3D%3D");
+            String url = "https://www.youtube.com/results?search_query=" + enc + "&sp=EgIQAg%3D%3D";
+            // Try desktop UA first (SSR data), then mobile UA as fallback —
+            // YouTube sometimes answers bare requests with a consent page.
+            String html = Fetch.getDesktop(url);
+            if (countChannelIds(html) == 0) {
+                html = Fetch.get(url);
+            }
             if (html == null) {
                 lastError = "search fetch failed HTTP " + Fetch.lastCode;
                 return out;
@@ -299,11 +304,20 @@ public class Tube {
                 out.add(new String[]{e.getKey(), e.getValue()});
                 if (out.size() >= 8) break;
             }
-            lastError = "search ok, " + out.size() + " results";
+            if (out.isEmpty()) lastError = "search ok but 0 parsed HTTP " + Fetch.lastCode;
+            else lastError = "search ok, " + out.size() + " results";
         } catch (Exception e) {
             lastError = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
         }
         return out;
+    }
+
+    private static int countChannelIds(String html) {
+        if (html == null) return 0;
+        Matcher m = Pattern.compile("\\\"channelId\\\":\\\"UC").matcher(html);
+        int n = 0;
+        while (m.find()) n++;
+        return n;
     }
 
     private static String unescapeJson(String s) {
@@ -368,6 +382,8 @@ final class Fetch {
             URL url = new URL(urlString);
             con = (HttpURLConnection) url.openConnection();
             con.setRequestProperty("User-Agent", ua);
+            con.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            con.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
             con.setConnectTimeout(12000);
             con.setReadTimeout(15000);
             con.setInstanceFollowRedirects(true);

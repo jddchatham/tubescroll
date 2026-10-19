@@ -873,6 +873,9 @@ public class MainActivity extends Activity {
                     public void run() {
                         setLoadingPill(false, null);
                         if (results.isEmpty()) {
+                            Toast.makeText(MainActivity.this,
+                                    "Search: " + Tube.lastError + " \u2014 trying direct",
+                                    Toast.LENGTH_LONG).show();
                             addChannelDirect(q);
                         } else {
                             showChannelPicker(results);
