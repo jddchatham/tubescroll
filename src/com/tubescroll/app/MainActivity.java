@@ -82,6 +82,7 @@ public class MainActivity extends Activity {
 
     private final ArrayList<Tube> posts = new ArrayList<Tube>();
     private final HashMap<String, String> idCache = new HashMap<String, String>();
+    private final HashMap<String, String> chnames = new HashMap<String, String>();
 
     private final ArrayList<PageRef> pageRefs = new ArrayList<PageRef>();
     private ArrayList<Tube> visible = new ArrayList<Tube>();
@@ -118,12 +119,19 @@ public class MainActivity extends Activity {
             currentKey = saved;
             currentIsCustom = true;
         }
-        // Restore resolved channel ids.
+        // Restore resolved channel ids and display names.
         String ids = prefs.getString("chids", "");
         if (!ids.isEmpty()) {
             for (String line : ids.split("\n")) {
                 int i = line.indexOf('=');
                 if (i > 0) idCache.put(line.substring(0, i), line.substring(i + 1));
+            }
+        }
+        String names = prefs.getString("chnames", "");
+        if (!names.isEmpty()) {
+            for (String line : names.split("\n")) {
+                int i = line.indexOf('=');
+                if (i > 0) chnames.put(line.substring(0, i), line.substring(i + 1));
             }
         }
 
@@ -610,6 +618,8 @@ public class MainActivity extends Activity {
     }
 
     private String prettyChannel(String key) {
+        String named = chnames.get(key);
+        if (named != null && !named.isEmpty()) return named.toUpperCase();
         String s = key;
         int i = s.lastIndexOf('/');
         if (i >= 0) s = s.substring(i + 1);
@@ -848,10 +858,78 @@ public class MainActivity extends Activity {
     }
 
     private void submitAdd() {
-        String q = addInput.getText().toString().trim();
+        final String q = addInput.getText().toString().trim();
         hideKeyboard();
         if (q.isEmpty()) return;
-        if (q.length() > 80) q = q.substring(0, 80);
+        if (q.length() > 80) { addChannelDirect(q.substring(0, 80)); return; }
+        // Search YouTube for channels matching the text, then let the user pick.
+        setLoadingPill(true, "SEARCHING CHANNELS\u2026");
+        io.execute(new Runnable() {
+            @Override
+            public void run() {
+                final ArrayList<String[]> results = Tube.searchChannels(q);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        setLoadingPill(false, null);
+                        if (results.isEmpty()) {
+                            addChannelDirect(q);
+                        } else {
+                            showChannelPicker(results);
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    private void showChannelPicker(final ArrayList<String[]> results) {
+        final String[] labels = new String[results.size()];
+        for (int i = 0; i < results.size(); i++) {
+            labels[i] = results.get(i)[1];
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Pick a channel")
+                .setItems(labels, new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        String id = results.get(which)[0];
+                        String name = results.get(which)[1];
+                        chnames.put(id, name);
+                        saveChNames();
+                        if (!customs.contains(id)) {
+                            customs.add(id);
+                            saveCustoms();
+                        }
+                        addInput.setText("");
+                        addRow.setVisibility(View.GONE);
+                        rebuildCatRow();
+                        setChannel(id, true);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void saveChNames() {
+        StringBuilder sb = new StringBuilder();
+        for (java.util.Map.Entry<String, String> e : chnames.entrySet()) {
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(e.getKey()).append('=').append(e.getValue().replace("\n", " "));
+        }
+        prefs.edit().putString("chnames", sb.toString()).apply();
+    }
+
+    /** Old behavior: interpret the text as a handle / link and add directly. */
+    private void addChannelDirect(String q) {
+        if (q.startsWith("https://")) {
+            int at = q.indexOf(".com/");
+            if (at > 0) q = q.substring(at + 5);
+            while (q.startsWith("/")) q = q.substring(1);
+            int slash = q.indexOf('/');
+            if (slash > 0) q = q.substring(0, slash);
+        }
+        if (!q.startsWith("@") && !q.startsWith("UC")) q = "@" + q;
         if (!containsIgnoreCase(customs, q) && !isPreset(q)) {
             customs.add(q);
             saveCustoms();

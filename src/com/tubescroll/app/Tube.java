@@ -271,6 +271,66 @@ public class Tube {
         return null;
     }
 
+    /**
+     * Search YouTube for channels; returns up to 8 [channelId, title] pairs.
+     * Uses the desktop UA because the mobile shell carries no SSR data.
+     */
+    public static ArrayList<String[]> searchChannels(String query) {
+        ArrayList<String[]> out = new ArrayList<String[]>();
+        lastError = "";
+        try {
+            String enc = java.net.URLEncoder.encode(query, "UTF-8");
+            String html = Fetch.getDesktop(
+                    "https://www.youtube.com/results?search_query=" + enc + "&sp=EgIQAg%3D%3D");
+            if (html == null) {
+                lastError = "search fetch failed HTTP " + Fetch.lastCode;
+                return out;
+            }
+            Matcher m = Pattern.compile(
+                    "\\\"channelId\\\":\\\"(UC[A-Za-z0-9_\\\\-]{10,})\\\",\\\"title\\\":\\{\\\"simpleText\\\":\\\"((?:[^\\\"\\\\\\\\]|\\\\\\\\.)*)\\\"\\}")
+                    .matcher(html);
+            java.util.LinkedHashMap<String, String> seen = new java.util.LinkedHashMap<String, String>();
+            while (m.find()) {
+                String id = m.group(1);
+                String title = unescapeJson(m.group(2)).trim();
+                if (!seen.containsKey(id) && !title.isEmpty()) seen.put(id, title);
+            }
+            for (java.util.Map.Entry<String, String> e : seen.entrySet()) {
+                out.add(new String[]{e.getKey(), e.getValue()});
+                if (out.size() >= 8) break;
+            }
+            lastError = "search ok, " + out.size() + " results";
+        } catch (Exception e) {
+            lastError = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+        }
+        return out;
+    }
+
+    private static String unescapeJson(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                char n = s.charAt(++i);
+                if (n == 'u' && i + 4 < s.length()) {
+                    try {
+                        sb.append((char) Integer.parseInt(s.substring(i + 1, i + 5), 16));
+                        i += 4;
+                    } catch (Exception e) {
+                        sb.append('u');
+                    }
+                } else if (n == 'n') {
+                    sb.append('\n');
+                } else {
+                    sb.append(n); // \" \\ \/
+                }
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
     public static String feedUrlForChannel(String channelId) {
         // The feed 404s without an extra query param; hl=en satisfies it.
         return "https://www.youtube.com/feeds/videos.xml?channel_id="
@@ -284,17 +344,30 @@ final class Fetch {
     static final String UA = "Mozilla/5.0 (Linux; Android 13; SM-S918B) "
             + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36";
 
+    // Desktop UA: YouTube serves SSR data (search results, channel ids) only
+    // to desktop clients; mobile UAs get an empty JS shell.
+    static final String DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+
     static int lastCode;
 
     private Fetch() {}
 
     static String get(String urlString) {
+        return getWithUa(urlString, UA);
+    }
+
+    static String getDesktop(String urlString) {
+        return getWithUa(urlString, DESKTOP_UA);
+    }
+
+    private static String getWithUa(String urlString, String ua) {
         HttpURLConnection con = null;
         lastCode = 0;
         try {
             URL url = new URL(urlString);
             con = (HttpURLConnection) url.openConnection();
-            con.setRequestProperty("User-Agent", UA);
+            con.setRequestProperty("User-Agent", ua);
             con.setConnectTimeout(12000);
             con.setReadTimeout(15000);
             con.setInstanceFollowRedirects(true);
