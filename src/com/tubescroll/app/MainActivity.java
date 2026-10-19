@@ -5,13 +5,17 @@ import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -482,13 +486,38 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    /**
+     * Queue the download: drop a queue file into the shared Download folder;
+     * the Termux tube-queue-daemon picks it up and runs yt-dlp. Clipboard is
+     * the fallback; RUN_COMMAND is attempted too (works after Termux reloads
+     * its config once).
+     */
     private void runDownload(String url, String kind) {
-        // Always stage the command on the clipboard as the guaranteed path.
+        if (Build.VERSION.SDK_INT >= 29) {
+            try {
+                // Literal column names: this compile jar's MediaStore lacks the
+                // nested Downloads class, but the runtime values are standard.
+                android.content.ContentValues v = new android.content.ContentValues();
+                v.put("_display_name", "tubequeue-" + System.currentTimeMillis() + ".txt");
+                v.put("mime_type", "text/plain");
+                v.put("relative_path", "Download");
+                Uri collection = Uri.parse("content://media/external_primary/downloads");
+                Uri u = getContentResolver().insert(collection, v);
+                if (u != null) {
+                    java.io.OutputStream os = getContentResolver().openOutputStream(u);
+                    os.write((url + "|" + kind).getBytes("UTF-8"));
+                    os.close();
+                    Toast.makeText(this,
+                            "Queued \u2713 \u2014 downloading in background, watch your Download folder",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+            } catch (Exception ignored) { }
+        }
+        // Fallback: stage the command on the clipboard and open Termux.
         String cmd = "tube-dl \"" + url + "\" " + kind;
         ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("cmd", cmd));
-        // Preferred path: hand straight to Termux (works once Termux has reloaded
-        // its config after an app restart; silently ignored otherwise).
         try {
             Intent i = new Intent();
             i.setClassName("com.termux", "com.termux.app.TermuxService");
@@ -497,17 +526,14 @@ public class MainActivity extends Activity {
             i.putExtra("arguments", new String[]{url, kind});
             i.putExtra("workdir", "/data/data/com.termux/files/home");
             startService(i);
-            Toast.makeText(this,
-                    "Download started \u2014 watch Termux, file lands in Download/",
-                    Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             try {
                 startActivity(getPackageManager().getLaunchIntentForPackage("com.termux"));
             } catch (Exception ignored) { }
-            Toast.makeText(this,
-                    "Command copied \u2014 open Termux, long-press \u2192 Paste \u2192 Enter",
-                    Toast.LENGTH_LONG).show();
         }
+        Toast.makeText(this,
+                "Command copied \u2014 open Termux, long-press \u2192 Paste \u2192 Enter",
+                Toast.LENGTH_LONG).show();
     }
 
     /** Paste any URL (YouTube, TikTok, anything yt-dlp knows) and download it. */
