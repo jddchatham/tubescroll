@@ -516,7 +516,7 @@ public class MainActivity extends Activity {
                     os.write((url + "|" + kind).getBytes("UTF-8"));
                     os.close();
                     Toast.makeText(this,
-                            "Queued \u2713 \u2014 downloading in background, watch your Download folder",
+                            "Queued \u2713 \u2014 notification when it lands in your Download folder",
                             Toast.LENGTH_LONG).show();
                     return;
                 }
